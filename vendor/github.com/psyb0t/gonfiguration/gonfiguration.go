@@ -87,7 +87,10 @@ func (g *gonfiguration) reset() {
 	}
 }
 
-func parseDstFields(dstVal reflect.Value, envVars map[string]string) error {
+func parseDstFields(
+	dstVal reflect.Value,
+	envVars map[string]string,
+) error {
 	for i := range dstVal.NumField() {
 		fieldType := dstVal.Type().Field(i)
 
@@ -97,13 +100,14 @@ func parseDstFields(dstVal reflect.Value, envVars map[string]string) error {
 		}
 
 		key, required := parseTag(tag)
+		tagDefault := tagDefaultFromField(fieldType)
 
 		fieldValue := dstVal.Field(i)
 		if !isSupportedType(fieldValue) {
 			return ErrUnsupportedFieldType
 		}
 
-		if err := fillFieldValue(fieldValue, key, required, envVars); err != nil {
+		if err := fillFieldValue(fieldValue, key, required, envVars, tagDefault); err != nil {
 			return fmt.Errorf("failed to set field value: %w", err)
 		}
 	}
@@ -124,12 +128,40 @@ func parseTag(tag string) (string, bool) {
 	return key, false
 }
 
-func fillFieldValue(fieldValue reflect.Value, key string, required bool, envVars map[string]string) error {
+func tagDefaultFromField(field reflect.StructField) *string {
+	val, ok := field.Tag.Lookup("default")
+	if !ok {
+		return nil
+	}
+
+	return &val
+}
+
+func fillFieldValue(
+	fieldValue reflect.Value,
+	key string,
+	required bool,
+	envVars map[string]string,
+	tagDefault *string,
+) error {
+	// Tag default has lowest priority
+	if tagDefault != nil {
+		if err := setEnvVarValue(fieldValue, *tagDefault); err != nil {
+			return fmt.Errorf("field %s: invalid default tag value %q: %w", key, *tagDefault, err)
+		}
+	}
+
+	// Programmatic default overrides tag default
 	hasDefault, err := setDefaultValue(fieldValue, key)
 	if err != nil {
 		return err
 	}
 
+	if !hasDefault {
+		hasDefault = tagDefault != nil
+	}
+
+	// Env var has highest priority
 	envVal, hasEnvVar := envVars[key]
 	if !hasEnvVar {
 		if required && !hasDefault {
@@ -142,7 +174,10 @@ func fillFieldValue(fieldValue reflect.Value, key string, required bool, envVars
 	return setEnvVarValue(fieldValue, envVal)
 }
 
-func setDefaultValue(fieldValue reflect.Value, key string) (bool, error) {
+func setDefaultValue(
+	fieldValue reflect.Value,
+	key string,
+) (bool, error) {
 	defaultValue := gonfig.getDefault(key)
 	if defaultValue == nil {
 		return false, nil
@@ -157,7 +192,10 @@ func setDefaultValue(fieldValue reflect.Value, key string) (bool, error) {
 	return true, nil
 }
 
-func setEnvVarValue(fieldValue reflect.Value, envVal string) error {
+func setEnvVarValue(
+	fieldValue reflect.Value,
+	envVal string,
+) error {
 	// Handle time.Duration specifically since it has underlying type int64
 	if fieldValue.Type() == reflect.TypeFor[time.Duration]() {
 		return setDuration(fieldValue, envVal)
@@ -186,7 +224,10 @@ func setEnvVarValue(fieldValue reflect.Value, envVal string) error {
 	return nil
 }
 
-func setInt(fieldValue reflect.Value, envVal string) error {
+func setInt(
+	fieldValue reflect.Value,
+	envVal string,
+) error {
 	num, err := strconv.ParseInt(envVal, 10, 64)
 	if err != nil {
 		return fmt.Errorf("failed to parse int: %w", err)
@@ -197,7 +238,10 @@ func setInt(fieldValue reflect.Value, envVal string) error {
 	return nil
 }
 
-func setUint(fieldValue reflect.Value, envVal string) error {
+func setUint(
+	fieldValue reflect.Value,
+	envVal string,
+) error {
 	num, err := strconv.ParseUint(envVal, 10, 64)
 	if err != nil {
 		return fmt.Errorf("failed to parse uint: %w", err)
@@ -208,7 +252,10 @@ func setUint(fieldValue reflect.Value, envVal string) error {
 	return nil
 }
 
-func setFloat(fieldValue reflect.Value, envVal string) error {
+func setFloat(
+	fieldValue reflect.Value,
+	envVal string,
+) error {
 	num, err := strconv.ParseFloat(envVal, fieldValue.Type().Bits())
 	if err != nil {
 		return fmt.Errorf("failed to parse float: %w", err)
@@ -219,7 +266,10 @@ func setFloat(fieldValue reflect.Value, envVal string) error {
 	return nil
 }
 
-func setBool(fieldValue reflect.Value, envVal string) error {
+func setBool(
+	fieldValue reflect.Value,
+	envVal string,
+) error {
 	b, err := strconv.ParseBool(envVal)
 	if err != nil {
 		return fmt.Errorf("failed to parse bool: %w", err)
@@ -230,7 +280,10 @@ func setBool(fieldValue reflect.Value, envVal string) error {
 	return nil
 }
 
-func setDuration(fieldValue reflect.Value, envVal string) error {
+func setDuration(
+	fieldValue reflect.Value,
+	envVal string,
+) error {
 	d, err := time.ParseDuration(envVal)
 	if err != nil {
 		return fmt.Errorf("failed to parse duration: %w", err)
@@ -241,7 +294,10 @@ func setDuration(fieldValue reflect.Value, envVal string) error {
 	return nil
 }
 
-func setStringSlice(fieldValue reflect.Value, envVal string) error {
+func setStringSlice(
+	fieldValue reflect.Value,
+	envVal string,
+) error {
 	if envVal == "" {
 		fieldValue.Set(reflect.ValueOf([]string{}))
 

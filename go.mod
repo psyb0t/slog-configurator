@@ -3,7 +3,7 @@ module github.com/psyb0t/slog-configurator
 go 1.25
 
 require (
-	github.com/psyb0t/gonfiguration v1.4.1
+	github.com/psyb0t/gonfiguration v1.5.0
 	github.com/stretchr/testify v1.11.1
 )
 
