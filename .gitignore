@@ -3,3 +3,5 @@ coverage.*
 .research_files
 .main
 CLAUDE.md
+coverage-percent.txt
+git-update.sh

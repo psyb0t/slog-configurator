@@ -1,5 +1,11 @@
 # slog-configurator
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/psyb0t/slog-configurator.svg)](https://pkg.go.dev/github.com/psyb0t/slog-configurator)
+[![CI](https://github.com/psyb0t/slog-configurator/actions/workflows/pipeline.yml/badge.svg?branch=main)](https://github.com/psyb0t/slog-configurator/actions/workflows/pipeline.yml)
+[![coverage](https://raw.githubusercontent.com/psyb0t/slog-configurator/badges/coverage.svg)](https://github.com/psyb0t/slog-configurator/actions/workflows/pipeline.yml)
+[![version](https://raw.githubusercontent.com/psyb0t/slog-configurator/badges/version.svg)](https://github.com/psyb0t/slog-configurator/tags)
+[![license](https://raw.githubusercontent.com/psyb0t/slog-configurator/badges/license.svg)](LICENSE)
+
 Welcome to `slog-configurator`, the badass sidekick for your logging adventures with Go's stdlib `log/slog`! This is the spiritual successor to [`logrus-configurator`](https://github.com/psyb0t/logrus-configurator), upgraded to use the standard library's structured logging package.
 
 ## What's This Shit About?
