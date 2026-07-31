@@ -441,6 +441,73 @@ func TestFanOutHandlerHandleError(t *testing.T) {
 	assert.Contains(t, err.Error(), "handler 0 failed")
 }
 
+// A failing sink must not stop the ones after it. slog discards whatever
+// Handle returns, so returning early on the first error would silently drop
+// every later handler's output — an unreachable Loki taking stdout with it,
+// with nothing to say why.
+func TestFanOutHandlerHandleKeepsGoingAfterAFailure(t *testing.T) {
+	testCases := []struct {
+		name     string
+		handlers func(working slog.Handler) []slog.Handler
+	}{
+		{
+			name: "failing handler first",
+			handlers: func(working slog.Handler) []slog.Handler {
+				return []slog.Handler{&errHandler{}, working}
+			},
+		},
+		{
+			name: "failing handler last",
+			handlers: func(working slog.Handler) []slog.Handler {
+				return []slog.Handler{working, &errHandler{}}
+			},
+		},
+		{
+			name: "failing handlers on both sides",
+			handlers: func(working slog.Handler) []slog.Handler {
+				return []slog.Handler{&errHandler{}, working, &errHandler{}}
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := &bytes.Buffer{}
+			working := slog.NewJSONHandler(buf, nil)
+
+			fanOut := NewFanOutHandler(tc.handlers(working)...)
+			record := slog.NewRecord(
+				time.Now(), slog.LevelInfo, "reaches every sink", 0,
+			)
+
+			// The failures are reported...
+			err := fanOut.Handle(context.Background(), record)
+			require.Error(t, err)
+
+			// ...and the working sink still got the record.
+			assert.Contains(t, buf.String(), "reaches every sink")
+		})
+	}
+}
+
+// Every failure is reported, not just the first one found.
+func TestFanOutHandlerHandleJoinsEveryFailure(t *testing.T) {
+	fanOut := NewFanOutHandler(&errHandler{}, &errHandler{}, &errHandler{})
+
+	record := slog.NewRecord(time.Now(), slog.LevelInfo, "all fail", 0)
+	err := fanOut.Handle(context.Background(), record)
+
+	require.Error(t, err)
+
+	for _, want := range []string{
+		"handler 0 failed",
+		"handler 1 failed",
+		"handler 2 failed",
+	} {
+		assert.Contains(t, err.Error(), want)
+	}
+}
+
 func TestFanOutHandlerWithAttrs(t *testing.T) {
 	buf := &bytes.Buffer{}
 

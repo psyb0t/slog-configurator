@@ -1,5 +1,11 @@
 # gonfiguration 🔧
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/psyb0t/gonfiguration.svg)](https://pkg.go.dev/github.com/psyb0t/gonfiguration)
+[![CI](https://github.com/psyb0t/gonfiguration/actions/workflows/pipeline.yml/badge.svg?branch=master)](https://github.com/psyb0t/gonfiguration/actions/workflows/pipeline.yml)
+[![coverage](https://raw.githubusercontent.com/psyb0t/gonfiguration/badges/coverage.svg)](https://github.com/psyb0t/gonfiguration/actions/workflows/pipeline.yml)
+[![version](https://raw.githubusercontent.com/psyb0t/gonfiguration/badges/version.svg)](https://github.com/psyb0t/gonfiguration/tags)
+[![license](https://raw.githubusercontent.com/psyb0t/gonfiguration/badges/license.svg)](LICENSE)
+
 A no-bullshit, thread-safe configuration library for Go that doesn't make you wanna punch your monitor. Tired of writing the same boring-ass env var parsing shit over and over? This badass package's got your back with reflection magic that actually works without making you cry.
 
 ## What This Beast Can Do
@@ -18,9 +24,9 @@ This ain't your granddad's config parser. Here's what makes this package fucking
 ### 🚀 **Core Features**
 
 - **Thread-Safe**: Won't shit the bed under concurrent load
-- **Default Values**: Set fallbacks so your app doesn't break when someone forgets to set an env var
+- **Default Values**: Set fallbacks via struct tags or programmatically so your app doesn't break when someone forgets to set an env var
 - **Required Fields**: Mark fields as required and get errors when they're missing
-- **Zero Dependencies**: Just stdlib, no external packages because we're not monsters
+- **Errors That Tell You Where**: Every error carries the file, line and function it came from via [ctxerrors](https://github.com/psyb0t/ctxerrors), so you're not grepping logs wondering which of six struct fields blew up
 - **Reflection-Based**: Uses Go's reflection to automagically map env vars to struct fields
 - **Type Safety**: Validates types and gives you proper error messages instead of cryptic bullshit
 
@@ -45,34 +51,24 @@ import (
 )
 
 type AppConfig struct {
-	// Basic types
-	ListenAddress string `env:"LISTEN_ADDRESS"`
-	Debug         bool   `env:"DEBUG"`
-	Port          int    `env:"PORT"`
+	// Basic types with defaults right in the struct
+	ListenAddress string `env:"LISTEN_ADDRESS" default:"127.0.0.1:8080"`
+	Debug         bool   `env:"DEBUG" default:"false"`
+	Port          int    `env:"PORT" default:"8080"`
 
 	// Advanced types
-	Timeout       time.Duration `env:"TIMEOUT"`
-	AllowedHosts  []string      `env:"ALLOWED_HOSTS"`
+	Timeout      time.Duration `env:"TIMEOUT" default:"30s"`
+	AllowedHosts []string      `env:"ALLOWED_HOSTS" default:"localhost,127.0.0.1"`
 
 	// Database shit - required fields will error if not set
-	DBDSN    string `env:"DB_DSN"`
-	DBName   string `env:"DB_NAME,required"`
-	DBUser   string `env:"DB_USER,required"`
-	DBPass   string `env:"DB_PASS,required"`
+	DBDSN  string `env:"DB_DSN" default:"postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable"`
+	DBName string `env:"DB_NAME,required"`
+	DBUser string `env:"DB_USER,required"`
+	DBPass string `env:"DB_PASS,required"`
 }
 
 func main() {
 	cfg := AppConfig{}
-
-	// Set some defaults because you're not a savage
-	gonfiguration.SetDefaults(map[string]interface{}{
-		"LISTEN_ADDRESS": "127.0.0.1:8080",
-		"DEBUG":          false,
-		"PORT":           8080,
-		"TIMEOUT":        30 * time.Second,
-		"ALLOWED_HOSTS":  []string{"localhost", "127.0.0.1"},
-		"DB_DSN":         "postgresql://postgres:postgres@localhost:5432/postgres?sslmode=disable",
-	})
 
 	// Set some env vars (in real life these come from your environment)
 	os.Setenv("DB_NAME", "myapp")
@@ -114,9 +110,39 @@ cfg := MyConfig{}
 gonfiguration.MustParse(&cfg) // panics if something's wrong
 ```
 
+### Default Values
+
+#### `default` struct tag
+
+The cleanest way to set defaults. Just slap a `default` tag on your struct field and you're done.
+
+```go
+type Config struct {
+    Port          int           `env:"PORT" default:"8080"`
+    Host          string        `env:"HOST" default:"localhost"`
+    Debug         bool          `env:"DEBUG" default:"false"`
+    Timeout       time.Duration `env:"TIMEOUT" default:"30s"`
+    AllowedHosts  []string      `env:"ALLOWED_HOSTS" default:"localhost,127.0.0.1"`
+    MaxRetries    uint          `env:"MAX_RETRIES" default:"3"`
+    Rate          float64       `env:"RATE" default:"0.5"`
+}
+```
+
+Works with all supported types. The value is parsed the same way env vars are.
+
+**Priority order**: `default` tag (lowest) → `SetDefault()` (mid) → env var (highest)
+
+A `default` tag also satisfies `required` fields:
+
+```go
+type Config struct {
+    APIKey string `env:"API_KEY,required" default:"dev-key"` // won't error if env var is missing
+}
+```
+
 #### `SetDefault(key string, val any)`
 
-Set a single default value for when the env var doesn't exist.
+Set a single default value programmatically. Useful when you have defaults in a shared package or need to compute them at runtime. Overrides `default` tag values.
 
 ```go
 gonfiguration.SetDefault("PORT", 8080)
@@ -126,7 +152,7 @@ gonfiguration.SetDefault("TIMEOUT", 30*time.Second)
 
 #### `SetDefaults(defaults map[string]any)`
 
-Set multiple defaults at once because batch operations are cooler.
+Set multiple defaults at once programmatically. Same deal as `SetDefault` - overrides `default` tag values.
 
 ```go
 gonfiguration.SetDefaults(map[string]interface{}{
@@ -194,20 +220,30 @@ if errors.Is(err, gonfiguration.ErrRequiredFieldNotSet) {
 
 // Invalid struct (not a pointer)
 err := gonfiguration.Parse(cfg) // Missing &
-// Error: "destination must be a pointer"
+// invalid destination: destination must be a pointer
+//   [gonfiguration.go:40 in gonfiguration.Parse]
 
 // Required field not set
 type Config struct {
     APIKey string `env:"API_KEY,required"`
 }
 err := gonfiguration.Parse(&Config{})
-// Error: "required field not set"
+// failed to parse fields: failed to set field value: field API_KEY: required field not set
+//   [gonfiguration.go:169 in gonfiguration.fillFieldValue]
+//   [gonfiguration.go:112 in gonfiguration.parseDstFields]
+//   [gonfiguration.go:44 in gonfiguration.Parse]
 
 // Invalid env var value
 os.Setenv("PORT", "not-a-number")
 err := gonfiguration.Parse(&cfg)
-// Error: "failed to parse int: ..."
+// failed to parse fields: failed to set field value: failed to parse int:
+// strconv.ParseInt: parsing "not-a-number": invalid syntax
+//   [gonfiguration.go:238 in gonfiguration.setInt]
+//   [gonfiguration.go:112 in gonfiguration.parseDstFields]
+//   [gonfiguration.go:44 in gonfiguration.Parse]
 ```
+
+Every error carries the file, line and function of each hop it was wrapped at, so a failure names the exact field and the exact setter that rejected it rather than making you guess which of six struct tags is wrong. `errors.Is()` still matches the sentinels through all of it.
 
 ## Thread Safety (Because Concurrency Is Hard)
 
@@ -236,17 +272,18 @@ go func() {
 ## Rules and Limitations (Read This Shit)
 
 1. **Struct fields MUST have `env:"ENV_VAR_NAME"` tags** - no tag, no parsing
-2. **Required fields use `env:"ENV_VAR_NAME,required"`** - errors if no value set
-3. **Only supports simple structs** - no nested structs, no complex types, no maps
-4. **Pass a pointer to `Parse()`** - not the struct itself, you savage
-5. **String slices use comma separation** - `"val1,val2,val3"` becomes `["val1", "val2", "val3"]`
-6. **Time durations use Go format** - `"30s"`, `"5m"`, `"2h30m"`, etc.
-7. **Empty string slices become empty slices** - `""` becomes `[]string{}`
-8. **Default value types must match field types** - don't be an idiot
+2. **Required fields use `env:"ENV_VAR_NAME,required"`** - errors if no value set (unless a default is provided)
+3. **Two ways to set defaults** - `default` struct tag for inline defaults, `SetDefault`/`SetDefaults` for programmatic ones. Priority: tag default < programmatic default < env var
+4. **Only supports simple structs** - no nested structs, no complex types, no maps
+5. **Pass a pointer to `Parse()`** - not the struct itself, you savage
+6. **String slices use comma separation** - `"val1,val2,val3"` becomes `["val1", "val2", "val3"]`
+7. **Time durations use Go format** - `"30s"`, `"5m"`, `"2h30m"`, etc.
+8. **Empty string slices become empty slices** - `""` becomes `[]string{}`
+9. **Programmatic default value types must match field types** - don't be an idiot
 
 ## License
 
-Copyright 2023-2025 Ciprian Mandache ([ciprian.51k.eu](https://ciprian.51k.eu))
+Copyright 2023-2026 Ciprian Mandache ([ciprian.51k.eu](https://ciprian.51k.eu))
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 
