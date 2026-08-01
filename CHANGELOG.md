@@ -2,6 +2,20 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.1.2 — 2026-08-01
+
+CI and repo plumbing only. No library code changed, no dependency moved.
+
+- The repo is now mirrored to **Codeberg** as well as GitLab on every branch
+  and tag push, and archived to the Wayback Machine and Software Heritage —
+  both from a single `mirror-and-archive.yml`. The archive runs only for the
+  default branch, tags, the monthly cron and manual dispatch, since Save Page
+  Now is rate-limited; it goes through the authenticated Save Page Now API.
+- Issues opened on the Codeberg and GitLab mirrors are pulled back into the
+  GitHub issue tracker on a six-hourly schedule. The scheduled run jitters to
+  avoid hammering both mirrors at once; a manual dispatch runs immediately.
+- `.telemetry/` is ignored by git and Docker.
+
 ## v1.1.1 — 2026-07-31
 
 CI only, no library change.
