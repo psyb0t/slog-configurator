@@ -8,6 +8,18 @@
 
 Welcome to `slog-configurator`, the badass sidekick for your logging adventures with Go's stdlib `log/slog`! This is the spiritual successor to [`logrus-configurator`](https://github.com/psyb0t/logrus-configurator), upgraded to use the standard library's structured logging package.
 
+## Contents
+
+- [What's This Shit About?](#whats-this-shit-about)
+- [Features](#features)
+- [Usage Example](#usage-example)
+- [Name The Env Vars Yourself](#name-the-env-vars-yourself)
+- [In-Memory Log Ring](#in-memory-log-ring)
+- [Advanced: Handler Management](#advanced-handler-management)
+- [Testing & Quality](#testing--quality)
+- [Contribute](#contribute)
+- [License](#license)
+
 ## What's This Shit About?
 
 `slog-configurator` is a Go package that whips your `slog` logger into shape without you breaking a sweat. Want to set the log level? Bam! Prefer JSON over plain text? Wham! Want to know who called the logger? Boom! It's got you covered.
@@ -23,6 +35,8 @@ It also handles **stdout/stderr separation** automatically - info and debug go t
 - **stdout/stderr separation** - errors and warnings go to stderr, everything else goes to stdout.
 - **Custom handler support** for when you need to take full control of your logging pipeline.
 - **Handler stacking** via `AddHandler()` - add extra handlers without nuking the existing setup, just like logrus hooks.
+- **Your own env var names** via `Init(Options{...})` - `LOG_LEVEL` and friends are the defaults, not the law.
+- **In-memory log ring** (`logring`) - keep the last N megabytes of records around and search them without leaving the process.
 
 ## Usage Example
 

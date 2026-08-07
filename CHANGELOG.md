@@ -2,6 +2,18 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.2.1 — 2026-08-07
+
+Documentation only. No library code changed.
+
+- The feature list now mentions the two things v1.2.0 actually added —
+  caller-named environment variables via `Init(Options{...})`, and the
+  `logring` in-memory ring. They were documented in their own sections but
+  missing from the list a reader skims first, so the headline features of the
+  previous release were invisible unless you scrolled.
+- Added a table of contents. The README had grown past the point where
+  anything below the fold is findable.
+
 ## v1.2.0 — 2026-08-07
 
 The environment variable names are yours now, and the in-memory log ring that
