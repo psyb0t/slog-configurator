@@ -2,6 +2,75 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.3.0 — 2026-08-07
+
+`logring` learns to search properly, and stops silently eating the ring when a
+record is bigger than the ring itself.
+
+Everything here is additive — `Entry` gains fields, `SearchOptions` gains
+filters, and existing calls keep compiling and behaving the same.
+
+### Fixed
+
+- **A record larger than `MaxBytes` wiped the entire ring and reported nothing.**
+  `MaxRecordBytes` defaults to 1 MiB regardless of `MaxBytes`, so with a ring
+  smaller than that, an oversized record passed the per-record check, got
+  appended, and was then evicted by the loop that enforces the byte cap —
+  taking every older entry with it on the way through, and incrementing
+  neither the stored count nor the dropped count. `Stats()` reported a clean,
+  empty ring. `MaxRecordBytes` is now clamped to `MaxBytes` in `New`, so an
+  oversized record is refused up front and counted as a drop.
+
+- **Every stored line carried a trailing newline.** Both stdlib handlers
+  terminate a record with one, and an `Entry` is already the record boundary —
+  nothing concatenates lines — so it delimited nothing. It cost a byte of the
+  budget per record and left every caller a character to strip before printing
+  or parsing. `Entry.Line` is now stored without it.
+
+- **The byte budget under-counted what it was bounding.** It summed only the
+  formatted line, while an entry also retains its message and its attributes.
+  The budget exists to bound memory, so everything the entry holds counts
+  against it.
+
+### Added
+
+- **Attribute search that does not assume JSON.** `Entry.Attrs` carries the
+  record's attributes as flat key/value pairs, captured from the `slog.Record`
+  at handle time rather than parsed back out of the formatted line — so it
+  behaves identically whether the ring is storing JSON or text:
+
+  ```go
+  ring.Search(logring.SearchOptions{
+      Attrs: map[string]string{"request_id": "abc123"},
+  })
+  ```
+
+  Attributes bound earlier through `slog.Logger.With` are included. They live
+  on the inner handler and never appear on the `slog.Record`, so reading the
+  record alone would have missed the single most useful thing to search by.
+  Grouped attributes get dotted keys — a logger with `WithGroup("http")`
+  logging `status` matches under `http.status`. `Entry.Attr(key)` looks one up.
+
+- **More `SearchOptions` filters**: `Exclude` (a substring that disqualifies a
+  line), `Match` (a compiled `*regexp.Regexp`, so a bad pattern is a
+  caller-side error rather than something `Search` has to swallow), `Until`
+  (upper time bound, pairing with `Since`), `Levels` (an exact set, for
+  "warnings and errors but not info" — which a floor cannot express), `Offset`
+  (paging), and `Ascending` (oldest first).
+
+- **`Count(SearchOptions)`** reports how many entries match without
+  materialising them — the total a paged `Search` would walk.
+
+- **`Tail(n)`** returns the newest n entries in chronological order,
+  unfiltered: the "show me what just happened" read.
+
+- **`Clear()`** discards every retained entry. The dropped counter is a
+  lifetime total and survives, so `Stats()` keeps reporting oversized records
+  the ring refused.
+
+- **`Entry.Msg`** carries the record's message on its own, so a caller can
+  display or match it without pulling it back out of the formatted line.
+
 ## v1.2.1 — 2026-08-07
 
 Documentation only. No library code changed.

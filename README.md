@@ -15,6 +15,7 @@ Welcome to `slog-configurator`, the badass sidekick for your logging adventures 
 - [Usage Example](#usage-example)
 - [Name The Env Vars Yourself](#name-the-env-vars-yourself)
 - [In-Memory Log Ring](#in-memory-log-ring)
+  - [Searching The Ring](#searching-the-ring)
 - [Advanced: Handler Management](#advanced-handler-management)
 - [Testing & Quality](#testing--quality)
 - [Contribute](#contribute)
@@ -36,7 +37,7 @@ It also handles **stdout/stderr separation** automatically - info and debug go t
 - **Custom handler support** for when you need to take full control of your logging pipeline.
 - **Handler stacking** via `AddHandler()` - add extra handlers without nuking the existing setup, just like logrus hooks.
 - **Your own env var names** via `Init(Options{...})` - `LOG_LEVEL` and friends are the defaults, not the law.
-- **In-memory log ring** (`logring`) - keep the last N megabytes of records around and search them without leaving the process.
+- **In-memory log ring** (`logring`) - keep the last N megabytes of records around and search them without leaving the process - by substring, regexp, level, time window, or structured attribute.
 
 ## Usage Example
 
@@ -166,7 +167,38 @@ entries := ring.Search(logring.SearchOptions{
 })
 ```
 
-It's bounded **by bytes, not record count** (100 MiB default), so one pathological 100 KB line can't evict a hundred useful ones, and any single record over 1 MiB gets dropped rather than allowed to eat the ring — `Stats()` reports how often that's happened. It retains INFO and above by default, because a service logging every query at DEBUG fills any ring with traces in seconds and buries what you were looking for.
+It's bounded **by bytes, not record count** (100 MiB default), so one pathological 100 KB line can't evict a hundred useful ones, and any single record too big for the ring gets dropped rather than allowed to eat it — `Stats()` reports how often that's happened. It retains INFO and above by default, because a service logging every query at DEBUG fills any ring with traces in seconds and buries what you were looking for.
+
+Each record is its own `Entry` — the ring captures per handler call, it never splits a stream on a delimiter. A message with newlines in it stays one entry, and nothing has to guess where one record ends and the next begins.
+
+### Searching The Ring
+
+`Search` returns newest-first, capped at 200 unless you say otherwise. Every filter is optional and they all compose:
+
+```go
+ring.Search(logring.SearchOptions{
+	Contains: "timeout",                       // substring, case-insensitive
+	Exclude:  "healthcheck",                   // ...but not this one
+	Match:    regexp.MustCompile(`user=\d+`),  // or bring a regexp
+	Attrs:    map[string]string{"request_id": "abc123"},
+	MinLevel: slog.LevelWarn,                  // floor
+	Levels:   []slog.Level{slog.LevelError},   // or an exact set
+	Since:    start,
+	Until:    end,
+	Limit:    50,
+	Offset:   100,                             // paging
+})
+```
+
+**`Attrs` doesn't parse the stored line, so it doesn't give a shit what format you're in.** Attributes are captured off the record itself when it's handled, so field search works the same in text mode as in JSON — and it picks up the ones you bound way earlier with `logger.With(...)`, which never appear on the record at all. Grouped attrs get dotted keys, so a logger with `WithGroup("http")` logging `status` is searchable as `http.status`. `Entry.Attr("http.status")` pulls one back out.
+
+Three more reads, for what `Search` handles badly:
+
+```go
+n := ring.Count(logring.SearchOptions{MinLevel: slog.LevelError})  // how many, without hauling them out
+recent := ring.Tail(50)                                            // last 50, oldest-first, unfiltered
+ring.Clear()                                                       // dump it
+```
 
 **It's a debugging aid, not a log store.** Bounded, per-process, and it dies with the process — the moment you most want the logs is the moment they're gone. Ship them somewhere durable too.
 
