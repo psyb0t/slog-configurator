@@ -11,7 +11,6 @@ import (
 
 func TestSetDefaults(t *testing.T) {
 	unsetEnvs(t)
-	setDefaults()
 	require.NoError(t, configure(), "Unexpected error")
 }
 

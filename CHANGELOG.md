@@ -2,6 +2,89 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.2.0 — 2026-08-07
+
+The environment variable names are yours now, and the in-memory log ring that
+was living in a downstream copy of this package comes home.
+
+Everything here is additive. The blank import behaves exactly as before, and
+`AddHandler` / `SetHandlers` keep compiling unchanged at every existing call
+site.
+
+### Added
+
+- **`Init(Options)` — configure which environment variables get read.**
+  `LOG_LEVEL` / `LOG_FORMAT` / `LOG_ADD_SOURCE` remain the defaults, but a
+  caller can now name its own:
+
+  ```go
+  slogconfigurator.Init(slogconfigurator.Options{
+      LevelEnvVar:  "MYAPP_LOG_LEVEL",
+      FormatEnvVar: "MYAPP_LOG_FORMAT",
+  })
+  ```
+
+  Only the named variables are read, so a stray `LOG_LEVEL` in the environment
+  cannot override the caller's own. `Options` also moves the fallbacks
+  (`DefaultLevel`, `DefaultFormat`, `DefaultAddSource`) for when a sane default
+  beats making every deployment set one. The zero `Options{}` reproduces the
+  historical configuration exactly.
+
+  This was previously impossible: the names lived in struct tags, which are
+  fixed at compile time, so the only way to change them was to copy the whole
+  package — which is what at least one consumer ended up doing.
+
+- **`logring` — a bounded in-memory ring of recent records**, as an
+  `slog.Handler` that stacks onto the fan-out:
+
+  ```go
+  ring := logring.New(logring.Options{})
+  slogconfigurator.AddHandler(ring)
+  entries := ring.Search(logring.SearchOptions{Contains: "timeout"})
+  ```
+
+  Bounded by BYTES rather than record count (100 MiB default), so a single
+  pathological line cannot evict a hundred useful ones; records over 1 MiB are
+  dropped rather than allowed to eat the ring, and `Stats()` reports how often
+  that happened. Retains INFO and above by default, because a service logging
+  every query at DEBUG fills any ring with traces in seconds. Handlers derived
+  through `WithAttrs` / `WithGroup` share one ring.
+
+  It is a debugging aid, not a log store — bounded, per process, and gone when
+  the process dies.
+
+- **`FanOutHandler.Len()`** reports how many handlers the fan-out dispatches to,
+  so a caller can assert `AddHandler` stacked onto the existing set rather than
+  replacing it. That difference is invisible from outside until logs go missing.
+
+- **`EnvVarNameLevel` / `EnvVarNameFormat` / `EnvVarNameAddSource`** are exported,
+  so a caller naming its own variables can still reference the defaults.
+
+### Changed
+
+- **`AddHandler` now returns `bool`** — `true` when the default logger was this
+  package's fan-out. `false` means something else had replaced slog's default
+  and the handler was stacked onto that instead: still added, but the
+  stdout/stderr split is gone, which is worth noticing rather than discovering
+  through absent logs. Discarding a result is legal Go, so every existing
+  `AddHandler(h)` call site continues to compile untouched.
+
+- **An empty environment variable now counts as unset.** An exported but empty
+  `LOG_LEVEL=` in a shell profile means "I did not set this", not "configure me
+  with the empty string" — the latter failed validation and panicked the
+  process at import time.
+
+- **An unparseable `LOG_ADD_SOURCE` is now a clear error** (`ErrInvalidLogAddSource`)
+  naming the variable and the value, instead of silently reading as `false`.
+
+### Removed
+
+- **The `gonfiguration` dependency.** The three settings are read from the
+  environment directly. That loader resolves names from struct tags, which is
+  precisely what made them unconfigurable, and it was the package's only use of
+  it. Direct dependencies are now `ctxerrors` and `testify` — worth keeping
+  short for something this widely blank-imported.
+
 ## v1.1.2 — 2026-08-01
 
 CI and repo plumbing only. No library code changed, no dependency moved.

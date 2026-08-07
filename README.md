@@ -95,6 +95,67 @@ And enjoy the sweet sound of (almost) silence:
 
 Whether you're in for a riot or a silent disco, `slog-configurator` is your ticket. (check out all of the supported levels in [`level.go`](level.go))
 
+## Name The Env Vars Yourself
+
+`LOG_LEVEL` / `LOG_FORMAT` / `LOG_ADD_SOURCE` are the defaults, not the law. If your app already namespaces its config — or those names are taken — hand `Init` the ones you want:
+
+```go
+import slogconfigurator "github.com/psyb0t/slog-configurator"
+
+func main() {
+	if err := slogconfigurator.Init(slogconfigurator.Options{
+		LevelEnvVar:     "MYAPP_LOG_LEVEL",
+		FormatEnvVar:    "MYAPP_LOG_FORMAT",
+		AddSourceEnvVar: "MYAPP_LOG_ADD_SOURCE",
+	}); err != nil {
+		panic(err)
+	}
+}
+```
+
+Only the variables you name get read — a stray `LOG_LEVEL` in the environment won't sneak in behind yours.
+
+You can move the fallbacks too, for when a sane default beats making every deployment set it:
+
+```go
+slogconfigurator.Init(slogconfigurator.Options{
+	DefaultLevel:     "info",
+	DefaultFormat:    "json",   // instead of text
+	DefaultAddSource: true,
+})
+```
+
+The zero `Options{}` is exactly what the blank import already does, so `Init(Options{})` re-runs the same configuration rather than a different one.
+
+**Call it early.** The blank import configures logging at import time and `Init` replaces slog's default logger — so any logger you already derived with `slog.Logger.With` keeps pointing at the old chain. Same caveat as `AddHandler` below.
+
+## In-Memory Log Ring
+
+`logring` keeps the most recent records in a bounded ring so a process can search its own logs without leaving the process — handy for a `/debug/logs` endpoint or an incident hook that wants the last few hundred lines.
+
+```go
+import (
+	"log/slog"
+
+	slogconfigurator "github.com/psyb0t/slog-configurator"
+	"github.com/psyb0t/slog-configurator/logring"
+)
+
+ring := logring.New(logring.Options{})
+slogconfigurator.AddHandler(ring)
+
+// later — newest first
+entries := ring.Search(logring.SearchOptions{
+	Contains: "timeout",
+	MinLevel: slog.LevelWarn,
+	Limit:    50,
+})
+```
+
+It's bounded **by bytes, not record count** (100 MiB default), so one pathological 100 KB line can't evict a hundred useful ones, and any single record over 1 MiB gets dropped rather than allowed to eat the ring — `Stats()` reports how often that's happened. It retains INFO and above by default, because a service logging every query at DEBUG fills any ring with traces in seconds and buries what you were looking for.
+
+**It's a debugging aid, not a log store.** Bounded, per-process, and it dies with the process — the moment you most want the logs is the moment they're gone. Ship them somewhere durable too.
+
 ## Advanced: Handler Management
 
 The default handler is always a `FanOutHandler` that dispatches to all registered handlers. On init, it contains a single `MultiWriterHandler` (the stdout/stderr splitter). You can stack more handlers on top or replace them all.
@@ -114,6 +175,10 @@ slogconfigurator.SetHandlers(myHandler1, myHandler2)
 ### Adding Extra Handlers
 
 `AddHandler` stacks a new handler on top of the existing ones. Every log record gets dispatched to all handlers. Call it multiple times and they all stack up:
+
+**Call it early.** `slog.Logger.With` and `WithGroup` snapshot the handler chain at the moment they're called, so a logger you derived *before* the `AddHandler` never carries the new handler and silently drops those records. Add handlers before you derive anything.
+
+It returns `true` when the default logger was this package's fan-out. `false` means something else had replaced slog's default and your handler got stacked onto that instead — still added, but you've lost the stdout/stderr split, which is worth noticing rather than discovering through missing logs:
 
 ```go
 import slogconfigurator "github.com/psyb0t/slog-configurator"

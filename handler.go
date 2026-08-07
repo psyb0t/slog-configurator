@@ -101,6 +101,14 @@ func NewFanOutHandler(handlers ...slog.Handler) *FanOutHandler {
 	return &FanOutHandler{handlers: handlers}
 }
 
+// Len reports how many handlers the fan-out dispatches to. Exported so callers
+// can assert that AddHandler stacked onto the existing set rather than
+// replacing it — the difference is invisible from the outside until logs go
+// missing.
+func (h *FanOutHandler) Len() int {
+	return len(h.handlers)
+}
+
 // Enabled reports whether any of the underlying handlers handle records at the given level.
 func (h *FanOutHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	for _, handler := range h.handlers {
@@ -161,20 +169,35 @@ func SetHandlers(handlers ...slog.Handler) {
 	slog.SetDefault(slog.New(NewFanOutHandler(handlers...)))
 }
 
-// AddHandler adds an extra handler to the default FanOutHandler.
-func AddHandler(handler slog.Handler) {
+// AddHandler stacks an extra handler onto the default FanOutHandler, keeping
+// the existing ones. Use it to tee logs somewhere additional — a ring buffer, a
+// shipper, a test capture — without replacing what init configured.
+//
+// Call it EARLY. slog.Logger.With and WithGroup snapshot the handler chain at
+// the moment they are called, so a logger derived BEFORE the Add never carries
+// the new handler and silently drops those records. Handlers added before any
+// derivation reach everything.
+//
+// Reports whether the default logger was a FanOutHandler, i.e. whether this
+// package configured it. False means something else replaced slog's default and
+// the handler was stacked onto that instead — still added, but the caller has
+// lost the stdout/stderr split this package sets up, which is worth noticing
+// rather than discovering through absent logs.
+func AddHandler(handler slog.Handler) bool {
 	current := slog.Default().Handler()
 
 	fanOut, ok := current.(*FanOutHandler)
-	if ok {
-		handlers := make([]slog.Handler, len(fanOut.handlers)+1)
-		copy(handlers, fanOut.handlers)
-		handlers[len(fanOut.handlers)] = handler
+	if !ok {
+		slog.SetDefault(slog.New(NewFanOutHandler(current, handler)))
 
-		slog.SetDefault(slog.New(NewFanOutHandler(handlers...)))
-
-		return
+		return false
 	}
 
-	slog.SetDefault(slog.New(NewFanOutHandler(current, handler)))
+	handlers := make([]slog.Handler, len(fanOut.handlers)+1)
+	copy(handlers, fanOut.handlers)
+	handlers[len(fanOut.handlers)] = handler
+
+	slog.SetDefault(slog.New(NewFanOutHandler(handlers...)))
+
+	return true
 }
