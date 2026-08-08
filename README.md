@@ -213,6 +213,16 @@ recent := ring.Tail(50)                                            // last 50, o
 ring.Clear()                                                       // dump it
 ```
 
+And three for how full it is:
+
+```go
+bytes := ring.Size()                    // what the ring bounds itself by — compare to MaxBytes
+count := ring.Len()                     // how many records that is
+entries, b, dropped := ring.Stats()     // all three under one lock, plus oversized-record drops
+```
+
+`Size()` is the one to watch: the ring evicts by BYTES, so it's the number that decides when older records start disappearing. `dropped` is worth surfacing too — nonzero means records were refused for exceeding `MaxRecordBytes`, so anything you search is running over an incomplete picture and nothing else would have told you.
+
 **It's a debugging aid, not a log store.** Bounded, per-process, and it dies with the process — the moment you most want the logs is the moment they're gone. Ship them somewhere durable too.
 
 ## Advanced: Handler Management

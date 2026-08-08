@@ -2,6 +2,42 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.5.0 — 2026-08-08
+
+Two single-value readers, so you stop destructuring `Stats` to get one number.
+
+### Added
+
+- **`logring.Handler.Size()`** reports how many bytes the retained records
+  currently occupy — the number the ring bounds itself by, so it is what to
+  compare against `Options.MaxBytes` and what to watch to see how close the
+  ring is to evicting. It counts everything an entry retains: the formatted
+  line, the message, and the captured attributes.
+
+- **`logring.Handler.Len()`** reports how many records the ring holds. Because
+  the ring is bounded by bytes rather than by record count, this moves with the
+  size of what was logged rather than tracking any fixed capacity.
+
+  ```go
+  if ring.Size() > threshold {
+      logger.Warn("log ring filling up", "bytes", ring.Size(), "entries", ring.Len())
+  }
+  ```
+
+  `Stats` already returned both alongside the drop count and is unchanged —
+  reach for it when you want all three, since it reads them under one lock and
+  they always describe the same moment. These exist because pulling one value
+  out of a three-value return reads badly:
+
+  ```go
+  _, bytes, _ := ring.Stats()   // before
+  bytes := ring.Size()          // now
+  ```
+
+  A record refused for exceeding `MaxRecordBytes` is not counted by either: it
+  was never retained, so charging the budget for it would drift the reported
+  size away from what the ring actually holds.
+
 ## v1.4.0 — 2026-08-08
 
 `Search` now returns the page **and** the total it was drawn from, both counted

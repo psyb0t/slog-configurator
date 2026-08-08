@@ -401,8 +401,42 @@ func (h *Handler) Clear() {
 	h.store.clear()
 }
 
+// Size reports how many bytes the retained records currently occupy.
+//
+// This is the number the ring bounds itself by, so it is what to compare
+// against Options.MaxBytes — and what to watch if you want to know how close
+// the ring is to evicting. It counts everything an entry retains: the formatted
+// line, the message, and the captured attributes.
+//
+// Stats returns the same number alongside the entry and drop counts. This
+// exists because reading one value out of a three-value return reads badly:
+//
+//	_, bytes, _ := ring.Stats()   // vs
+//	bytes := ring.Size()
+func (h *Handler) Size() int {
+	h.store.mu.RLock()
+	defer h.store.mu.RUnlock()
+
+	return h.store.curBytes
+}
+
+// Len reports how many records the ring currently holds.
+//
+// The ring is bounded by BYTES, not by record count, so this moves with the
+// size of what was logged rather than tracking any fixed capacity — see Size.
+func (h *Handler) Len() int {
+	h.store.mu.RLock()
+	defer h.store.mu.RUnlock()
+
+	return len(h.store.entries)
+}
+
 // Stats reports, in order, how many entries the ring holds, how many bytes
 // they occupy, and how many records it has dropped for being oversized.
+//
+// Use it when you want all three consistently — they are read under one lock,
+// so they always describe the same moment. For a single value, Len and Size
+// read better.
 func (h *Handler) Stats() (int, int, uint64) {
 	h.store.mu.RLock()
 	defer h.store.mu.RUnlock()
