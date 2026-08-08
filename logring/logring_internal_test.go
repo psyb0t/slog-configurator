@@ -62,7 +62,7 @@ func TestLevelIsConfigurable(t *testing.T) {
 			logger.Warn("w")
 			logger.Error("e")
 
-			got := h.Search(SearchOptions{})
+			got := h.Search(SearchOptions{}).Entries
 			require.Len(t, got, len(tc.want))
 
 			for i, msg := range tc.want {
@@ -135,7 +135,7 @@ func TestOutputFormat(t *testing.T) {
 			h := New(Options{Text: tc.text})
 			slog.New(h).Info("hello", "key", "value")
 
-			got := h.Search(SearchOptions{})
+			got := h.Search(SearchOptions{}).Entries
 			require.Len(t, got, 1)
 			assert.Contains(t, got[0].Line, tc.want)
 		})
@@ -148,7 +148,7 @@ func TestStoresValidJSONMatchingTheShippedFormat(t *testing.T) {
 	h := New(Options{})
 	slog.New(h).Info("hello", "key", "value")
 
-	got := h.Search(SearchOptions{})
+	got := h.Search(SearchOptions{}).Entries
 	require.Len(t, got, 1)
 
 	var parsed map[string]any
@@ -220,7 +220,7 @@ func TestRingBounds(t *testing.T) {
 				assert.LessOrEqual(t, bytes, tc.wantWithin,
 					"ring must stay under its byte cap")
 
-				got := h.Search(SearchOptions{})
+				got := h.Search(SearchOptions{}).Entries
 				require.NotEmpty(t, got)
 				assert.Contains(t, got[0].Line,
 					fmt.Sprintf(`"i":%d`, tc.records-1),
@@ -337,7 +337,7 @@ func TestSearch(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := searchCorpus(t, now)
 
-			got := h.Search(tc.opts)
+			got := h.Search(tc.opts).Entries
 
 			lines := make([]string, 0, len(got))
 			for _, e := range got {
@@ -371,7 +371,7 @@ func TestDerivedLoggersShareOneRing(t *testing.T) {
 	base.With("req", "abc").Info("from with")
 	base.WithGroup("grp").Info("from group", "inner", 1)
 
-	got := h.Search(SearchOptions{})
+	got := h.Search(SearchOptions{}).Entries
 	require.Len(t, got, 3, "every derived logger must reach one ring")
 
 	joined := strings.Join(
@@ -388,7 +388,7 @@ func TestDerivedLoggerInheritsLevel(t *testing.T) {
 	derived.Info("dropped")
 	derived.Error("kept")
 
-	got := h.Search(SearchOptions{})
+	got := h.Search(SearchOptions{}).Entries
 	require.Len(t, got, 1)
 	assert.Contains(t, got[0].Line, "kept")
 }
@@ -450,7 +450,7 @@ func TestZeroSearchOptionsDoesNotFilterByLevel(t *testing.T) {
 	entries, _, _ := h.Stats()
 	require.Equal(t, 2, entries, "both records must reach the store")
 
-	got := h.Search(SearchOptions{})
+	got := h.Search(SearchOptions{}).Entries
 	require.Len(t, got, 2, "an unfiltered Search must return the DEBUG record")
 	assert.Equal(t, slog.LevelDebug, got[1].Level)
 }
@@ -463,7 +463,7 @@ func TestSearchReturnsCustomSubDebugLevels(t *testing.T) {
 	h := New(Options{Level: levelTrace})
 	slog.New(h).Log(context.Background(), levelTrace, "traced")
 
-	require.Len(t, h.Search(SearchOptions{}), 1)
-	assert.Empty(t, h.Search(SearchOptions{MinLevel: slog.LevelDebug}),
+	require.Len(t, h.Search(SearchOptions{}).Entries, 1)
+	assert.Empty(t, h.Search(SearchOptions{MinLevel: slog.LevelDebug}).Entries,
 		"an explicit DEBUG floor must still exclude it")
 }

@@ -66,7 +66,7 @@ func TestStoredLineCarriesNoTrailingNewline(t *testing.T) {
 			h := New(Options{Text: tc.text})
 			slog.New(h).Info("hello")
 
-			got := h.Search(SearchOptions{})
+			got := h.Search(SearchOptions{}).Entries
 			require.Len(t, got, 1)
 			assert.NotContains(t, got[0].Line, "\n")
 		})
@@ -81,7 +81,7 @@ func TestAMultiLineMessageStaysOneEntry(t *testing.T) {
 	h := New(Options{Text: true})
 	slog.New(h).Info("first\nsecond\nthird")
 
-	got := h.Search(SearchOptions{})
+	got := h.Search(SearchOptions{}).Entries
 	require.Len(t, got, 1)
 	assert.Equal(t, "first\nsecond\nthird", got[0].Msg)
 }
@@ -95,7 +95,7 @@ func TestAttrsBoundThroughWithAreSearchable(t *testing.T) {
 	h := New(Options{})
 	slog.New(h).With("request_id", "abc").Info("handled", "status", "500")
 
-	got := h.Search(SearchOptions{Attrs: map[string]string{"request_id": "abc"}})
+	got := h.Search(SearchOptions{Attrs: map[string]string{"request_id": "abc"}}).Entries
 	require.Len(t, got, 1)
 
 	value, ok := got[0].Attr("status")
@@ -111,7 +111,7 @@ func TestAttributeSearchWorksInTextMode(t *testing.T) {
 	h := New(Options{Text: true})
 	slog.New(h).With("request_id", "abc").Info("handled")
 
-	got := h.Search(SearchOptions{Attrs: map[string]string{"request_id": "abc"}})
+	got := h.Search(SearchOptions{Attrs: map[string]string{"request_id": "abc"}}).Entries
 	assert.Len(t, got, 1)
 }
 
@@ -157,7 +157,7 @@ func TestGroupedAttrsAreCapturedUnderDottedKeys(t *testing.T) {
 
 			got := h.Search(SearchOptions{
 				Attrs: map[string]string{tc.wantKey: "500"},
-			})
+			}).Entries
 			assert.Len(t, got, 1)
 		})
 	}
@@ -174,8 +174,8 @@ func TestSiblingLoggersDoNotShareAttrs(t *testing.T) {
 	base.With("who", "left").Info("l")
 	base.With("who", "right").Info("r")
 
-	left := h.Search(SearchOptions{Attrs: map[string]string{"who": "left"}})
-	right := h.Search(SearchOptions{Attrs: map[string]string{"who": "right"}})
+	left := h.Search(SearchOptions{Attrs: map[string]string{"who": "left"}}).Entries
+	right := h.Search(SearchOptions{Attrs: map[string]string{"who": "right"}}).Entries
 
 	require.Len(t, left, 1)
 	require.Len(t, right, 1)
@@ -346,7 +346,7 @@ func TestSearchFilters(t *testing.T) {
 
 			h := filterCorpus(t, now)
 
-			assert.Equal(t, tc.want, lines(h.Search(tc.opts)))
+			assert.Equal(t, tc.want, lines(h.Search(tc.opts).Entries))
 		})
 	}
 }
@@ -458,7 +458,7 @@ func TestClearEmptiesTheRingButKeepsTheDropCount(t *testing.T) {
 
 	// The ring stays usable after a Clear.
 	logger.Info("after")
-	assert.Len(t, h.Search(SearchOptions{}), 1)
+	assert.Len(t, h.Search(SearchOptions{}).Entries, 1)
 }
 
 // A derived handler shares the store, so clearing through any of them clears
@@ -473,7 +473,7 @@ func TestClearThroughADerivedHandler(t *testing.T) {
 	slog.New(h).Info("one")
 	derived.Clear()
 
-	assert.Empty(t, h.Search(SearchOptions{}))
+	assert.Empty(t, h.Search(SearchOptions{}).Entries)
 }
 
 // The byte budget bounds MEMORY, so what an entry retains beyond its line has

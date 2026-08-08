@@ -35,7 +35,7 @@ func TestRingKeepsItsLevelGateInsideTheConfiguredFanOut(t *testing.T) {
 	slog.Info("an info line the ring must not keep")
 	slog.Warn("a warn line the ring must keep")
 
-	entries := ring.Search(logring.SearchOptions{})
+	entries := ring.Search(logring.SearchOptions{}).Entries
 
 	require.Len(t, entries, 1)
 	assert.Contains(t, entries[0].Line, "a warn line the ring must keep")

@@ -160,11 +160,15 @@ ring := logring.New(logring.Options{})
 slogconfigurator.AddHandler(ring)
 
 // later — newest first
-entries := ring.Search(logring.SearchOptions{
+page := ring.Search(logring.SearchOptions{
 	Contains: "timeout",
 	MinLevel: slog.LevelWarn,
 	Limit:    50,
 })
+
+for _, entry := range page.Entries {
+	fmt.Println(entry.Level, entry.Msg)
+}
 ```
 
 It's bounded **by bytes, not record count** (100 MiB default), so one pathological 100 KB line can't evict a hundred useful ones, and any single record too big for the ring gets dropped rather than allowed to eat it — `Stats()` reports how often that's happened. It retains INFO and above by default, because a service logging every query at DEBUG fills any ring with traces in seconds and buries what you were looking for.
@@ -173,10 +177,10 @@ Each record is its own `Entry` — the ring captures per handler call, it never 
 
 ### Searching The Ring
 
-`Search` returns newest-first, capped at 200 unless you say otherwise. Every filter is optional and they all compose:
+`Search` returns a `Page` — `Entries` newest-first (capped at 200 unless you say otherwise), plus `Total` and the `Offset` echoed back. Every filter is optional and they all compose:
 
 ```go
-ring.Search(logring.SearchOptions{
+page := ring.Search(logring.SearchOptions{
 	Contains: "timeout",                       // substring, case-insensitive
 	Exclude:  "healthcheck",                   // ...but not this one
 	Match:    regexp.MustCompile(`user=\d+`),  // or bring a regexp
@@ -191,6 +195,15 @@ ring.Search(logring.SearchOptions{
 ```
 
 **`Attrs` doesn't parse the stored line, so it doesn't give a shit what format you're in.** Attributes are captured off the record itself when it's handled, so field search works the same in text mode as in JSON — and it picks up the ones you bound way earlier with `logger.With(...)`, which never appear on the record at all. Grouped attrs get dotted keys, so a logger with `WithGroup("http")` logging `status` is searchable as `http.status`. `Entry.Attr("http.status")` pulls one back out.
+
+**`Search` hands back the total too**, so you can tell "50 of 4312" from "50 of 50":
+
+```go
+page := ring.Search(logring.SearchOptions{Contains: "timeout", Limit: 50})
+fmt.Printf("showing %d of %d\n", len(page.Entries), page.Total)
+```
+
+`page.Total` is counted before `Limit` and `Offset` apply, in the *same* locked walk that collected the entries. That's deliberate: getting it from a separate `Count` call means two locks, and on a ring that's still being written, records arrive or evict in between — so the total describes a ring the page didn't come from, and paging on top of that can skip or repeat records. Only the ring can hold one lock across both, so only the ring can make them agree. The cost is a full walk, since the total is unknowable without visiting every entry.
 
 Three more reads, for what `Search` handles badly:
 

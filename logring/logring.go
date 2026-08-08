@@ -366,8 +366,19 @@ func (h *Handler) derive(inner slog.Handler) *Handler {
 	}
 }
 
-// Search returns matching entries, newest first unless opts.Ascending.
-func (h *Handler) Search(opts SearchOptions) []Entry {
+// Search returns one page of matches, newest first unless opts.Ascending,
+// together with the total that page was drawn from.
+//
+// Total is what makes paging deliberate rather than guesswork: without it a
+// full page and the last page are indistinguishable, so a reader cannot tell
+// whether they have seen everything. It is counted in the SAME locked walk that
+// collects the page, so the two always describe the same ring — computing them
+// from two separate reads would let records arrive or evict in between, and
+// paging on top of that can skip or repeat records.
+//
+// The cost of that guarantee is a full walk: the total is unknowable without
+// visiting every entry, so this cannot stop early once the page is full.
+func (h *Handler) Search(opts SearchOptions) Page {
 	return h.store.search(opts)
 }
 
@@ -482,7 +493,27 @@ func (s *store) push(entry Entry) {
 	}
 }
 
-func (s *store) search(opts SearchOptions) []Entry {
+// Page is one bounded read plus the total it was drawn from.
+type Page struct {
+	// Entries is the page itself, ordered as the search asked for.
+	Entries []Entry
+
+	// Total is how many entries matched the filters BEFORE Limit and Offset
+	// were applied. It is counted in the same locked walk that collected
+	// Entries, so the two always describe the same ring.
+	Total int
+
+	// Offset is echoed back, so a caller paging through a result does not have
+	// to carry it alongside the response.
+	Offset int
+}
+
+// search collects a page and counts every match in ONE locked walk.
+//
+// The walk deliberately does not break once the page is full: stopping there
+// would leave Total counting only what it happened to visit, which is the whole
+// thing this is built to avoid.
+func (s *store) search(opts SearchOptions) Page {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = DefaultSearchLimit
@@ -494,16 +525,17 @@ func (s *store) search(opts SearchOptions) []Entry {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	out := make([]Entry, 0, min(limit, len(s.entries)))
+	page := Page{
+		Entries: make([]Entry, 0, min(limit, len(s.entries))),
+		Offset:  skip,
+	}
 
 	for _, i := range s.walkOrder(opts.Ascending) {
-		if len(out) >= limit {
-			break
-		}
-
 		if !filter.keep(s.entries[i]) {
 			continue
 		}
+
+		page.Total++
 
 		if skip > 0 {
 			skip--
@@ -511,10 +543,12 @@ func (s *store) search(opts SearchOptions) []Entry {
 			continue
 		}
 
-		out = append(out, s.entries[i])
+		if len(page.Entries) < limit {
+			page.Entries = append(page.Entries, s.entries[i])
+		}
 	}
 
-	return out
+	return page
 }
 
 // walkOrder yields the indices to visit in the requested direction. The caller

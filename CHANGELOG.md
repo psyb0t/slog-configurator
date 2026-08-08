@@ -2,6 +2,43 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.4.0 — 2026-08-08
+
+`Search` now returns the page **and** the total it was drawn from, both counted
+in one locked walk.
+
+### Changed
+
+- **`logring.Handler.Search` returns `Page` instead of `[]Entry`.**
+
+  ```go
+  page := ring.Search(logring.SearchOptions{Contains: "timeout", Limit: 50})
+  fmt.Printf("showing %d of %d\n", len(page.Entries), page.Total)
+  ```
+
+  `Page` carries `Entries`, `Total` — the matches counted before `Limit` and
+  `Offset` were applied — and the `Offset` echoed back. Existing call sites
+  append `.Entries` and behave exactly as before.
+
+  **Why the total lives here rather than in a second method.** Paging needs
+  both numbers, and taking them from `Search` plus `Count` means two separate
+  locked reads: on a ring that is still being written, records arrive or get
+  evicted in between, so the total ends up describing a ring the page did not
+  come from, and paging on top of that can skip or repeat records. Only the
+  ring can hold one lock across both reads, so only the ring can make them
+  agree — a caller cannot fix it from the outside, which is exactly why it is
+  not left to one.
+
+  Without the total, a full page and the last page are indistinguishable and a
+  reader cannot tell whether they have seen everything. It is not an extra: it
+  is what makes `Limit` and `Offset` usable at all.
+
+  The cost is a full walk. The total is unknowable without visiting every
+  entry, so the search no longer stops early once the page is full — for a
+  bounded in-process debug ring, not a meaningful price.
+
+  `Count`, `Tail`, `Clear` and `Stats` are unchanged.
+
 ## v1.3.0 — 2026-08-07
 
 `logring` learns to search properly, and stops silently eating the ring when a
