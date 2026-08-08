@@ -1,11 +1,11 @@
-package slogconfigurator_test
+package slogconf_test
 
 import (
 	"log/slog"
 	"os"
 	"testing"
 
-	slogconf "github.com/psyb0t/slog-configurator"
+	"github.com/psyb0t/slogging/slogconf"
 )
 
 // AddHandler grew a bool return. Go lets a call statement discard results, so

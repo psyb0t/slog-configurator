@@ -1,4 +1,4 @@
-package slogconfigurator
+package slogconf
 
 import (
 	"bytes"

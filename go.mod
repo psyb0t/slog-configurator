@@ -1,4 +1,4 @@
-module github.com/psyb0t/slog-configurator
+module github.com/psyb0t/slogging
 
 go 1.26
 

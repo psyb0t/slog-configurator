@@ -2,6 +2,75 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.6.0 — 2026-08-08
+
+The module is now `github.com/psyb0t/slogging`, and it holds more than the
+configurator.
+
+Same project as `slog-configurator`, renamed and restructured — same repository,
+same history, so the version numbering continues rather than restarting. The
+module path changed rather than its major version, so there is no `/v2` suffix
+and the tags stay on v1.
+
+Everything published up to `slog-configurator v1.5.0` keeps resolving under the
+old path, so nothing breaks until you migrate. New versions are published only
+under the new path.
+
+### Changed
+
+- **`github.com/psyb0t/slog-configurator` → `github.com/psyb0t/slogging`.**
+
+- **The configurator moved from the module root to `slogconf/`**, and its
+  package name from `slogconfigurator` to `slogconf`:
+
+  ```go
+  _ "github.com/psyb0t/slogging/slogconf"   // was: _ ".../slog-configurator"
+  slogconf.Init(slogconf.Options{...})      // was: slogconfigurator.Init(...)
+  ```
+
+- **`logring` moved to `handlers/logring/`.** It is an `slog.Handler`, so it
+  belongs with the other handlers rather than beside the thing that configures
+  them.
+
+- **Every exported name is unchanged.** `Init`, `Options`, `AddHandler`,
+  `SetHandlers`, `NewMultiWriterHandler`, `NewFanOutHandler`, the `logring`
+  surface — all identical. Only import paths and the package name move, so a
+  migration is a find-and-replace on imports.
+
+  `FanOutHandler` and `MultiWriterHandler` deliberately stay in `slogconf`
+  rather than moving under `handlers/`: they are what `Init` builds and what
+  `AddHandler` manipulates, not handlers you would reach for independently.
+
+### Added
+
+- **`handlers/loki`** — an `slog.Handler` that pushes records to Loki's HTTP
+  API, moved here from `github.com/psyb0t/common-go/slogging/loki`. A logging
+  handler has no business living in a general-purpose utility module, and the
+  three services using it already depend on this one.
+
+  ```go
+  client, _ := loki.NewClient()                 // reads SLOGGING_LOKI_URL
+  handler, _ := loki.NewHandler(client, slog.LevelInfo, nil)
+  slogconf.AddHandler(handler)
+  ```
+
+  **It arrives without its old dependencies.** The original parsed its two
+  environment variables through a struct-tag config loader and pulled HTTP
+  header constants from a utility module. Both are gone: it reads the same
+  `SLOGGING_LOKI_URL` and `SLOGGING_LOKI_APPNAME` through the standard library.
+  Keeping the loader would have re-introduced the exact dependency this module
+  removed in `slog-configurator v1.2.0`, and for two strings it bought nothing.
+
+  Behaviour is otherwise unchanged, including that pushes are best-effort: an
+  unreachable Loki, a bad payload or a 500 are dropped with a `Debug` line
+  rather than surfaced. slog discards whatever `Handle` returns, so an error
+  would achieve nothing — and retrying would let a dead Loki stall the
+  application that is only trying to log.
+
+  It also gains a test suite it never had, covering label-vs-line routing,
+  group prefixing, `With`-bound attrs surviving onto later records, and the
+  unreachable-server and error-response paths.
+
 ## v1.5.0 — 2026-08-08
 
 Two single-value readers, so you stop destructuring `Stats` to get one number.

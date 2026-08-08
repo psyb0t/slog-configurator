@@ -1,4 +1,4 @@
-package slogconfigurator
+package slogconf
 
 import (
 	"log/slog"

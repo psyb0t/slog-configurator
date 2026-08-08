@@ -1,9 +1,9 @@
 // Package logring keeps the most recent log records in a bounded in-memory
 // ring so a process can search its own logs without leaving the process.
 //
-// It is an slog.Handler, so it composes with this repo's fan-out:
+// It is an slog.Handler, so it composes with this module's fan-out:
 //
-//	slogconfigurator.AddHandler(logring.New(logring.Options{}))
+//	slogconf.AddHandler(logring.New(logring.Options{}))
 //
 // The ring is a debugging aid, not a log store. It is bounded, it is per
 // process, and it dies with the process — the moment you most want logs (a

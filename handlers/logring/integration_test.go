@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"testing"
 
-	slogconfigurator "github.com/psyb0t/slog-configurator"
-	"github.com/psyb0t/slog-configurator/logring"
+	"github.com/psyb0t/slogging/handlers/logring"
+	"github.com/psyb0t/slogging/slogconf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,19 +15,19 @@ import (
 // run at DEBUG: a fan-out dispatching on its own Enabled alone would pour every
 // trace line into the ring and bury what you actually search for.
 func TestRingKeepsItsLevelGateInsideTheConfiguredFanOut(t *testing.T) {
-	t.Setenv(slogconfigurator.EnvVarNameLevel, "debug")
-	require.NoError(t, slogconfigurator.Init(slogconfigurator.Options{}))
+	t.Setenv(slogconf.EnvVarNameLevel, "debug")
+	require.NoError(t, slogconf.Init(slogconf.Options{}))
 
 	// Init replaces the process-global default logger, so put the ambient
 	// configuration back for whatever runs after this test.
 	t.Cleanup(func() {
-		require.NoError(t, slogconfigurator.Init(slogconfigurator.Options{}))
+		require.NoError(t, slogconf.Init(slogconf.Options{}))
 	})
 
 	ring := logring.New(logring.Options{Level: slog.LevelWarn})
 	require.True(
 		t,
-		slogconfigurator.AddHandler(ring),
+		slogconf.AddHandler(ring),
 		"the default logger should be this package's fan-out",
 	)
 
@@ -43,22 +43,22 @@ func TestRingKeepsItsLevelGateInsideTheConfiguredFanOut(t *testing.T) {
 
 // A ring stacked onto the fan-out must not stop the handlers already there.
 func TestAddingTheRingLeavesTheExistingHandlersIntact(t *testing.T) {
-	require.NoError(t, slogconfigurator.Init(slogconfigurator.Options{}))
+	require.NoError(t, slogconf.Init(slogconf.Options{}))
 
 	t.Cleanup(func() {
-		require.NoError(t, slogconfigurator.Init(slogconfigurator.Options{}))
+		require.NoError(t, slogconf.Init(slogconf.Options{}))
 	})
 
 	before := slog.Default().Handler()
 
-	fanOut, ok := before.(*slogconfigurator.FanOutHandler)
+	fanOut, ok := before.(*slogconf.FanOutHandler)
 	require.True(t, ok, "expected the configured fan-out")
 
 	countBefore := fanOut.Len()
 
-	require.True(t, slogconfigurator.AddHandler(logring.New(logring.Options{})))
+	require.True(t, slogconf.AddHandler(logring.New(logring.Options{})))
 
-	after, ok := slog.Default().Handler().(*slogconfigurator.FanOutHandler)
+	after, ok := slog.Default().Handler().(*slogconf.FanOutHandler)
 	require.True(t, ok)
 	assert.Equal(t, countBefore+1, after.Len())
 }

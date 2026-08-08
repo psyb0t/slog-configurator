@@ -1,4 +1,4 @@
-package slogconfigurator
+package slogconf
 
 import (
 	"log/slog"
@@ -112,7 +112,7 @@ func init() {
 // The blank import already configures logging with the default names, so this
 // is only needed to change them or their fallbacks:
 //
-//	slogconfigurator.Init(slogconfigurator.Options{
+//	slogconf.Init(slogconf.Options{
 //	    LevelEnvVar:  "MYAPP_LOG_LEVEL",
 //	    FormatEnvVar: "MYAPP_LOG_FORMAT",
 //	})
