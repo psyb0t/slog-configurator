@@ -2,6 +2,16 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.6.1 — 2026-08-08
+
+The startup debug line reports the module's real name.
+
+- `slogconf`'s "configured" record was still prefixed `slog-configurator:` after
+  the rename, so the one log line the package emits about itself named a module
+  that no longer exists. It now reads `slogconf: configured`. The structured
+  fields (`level`, `format`, `addSource`) are unchanged, so anything filtering
+  on those still matches — only the message text moved.
+
 ## v1.6.0 — 2026-08-08
 
 The module is now `github.com/psyb0t/slogging`, and it holds more than the

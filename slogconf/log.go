@@ -93,7 +93,7 @@ type config struct {
 
 func (c config) log() {
 	slog.Debug(
-		"slog-configurator: configured",
+		"slogconf: configured",
 		slog.String("level", string(c.Level)),
 		slog.String("format", string(c.Format)),
 		slog.Bool("addSource", c.AddSource),
