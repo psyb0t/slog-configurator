@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/psyb0t/slogging/handlers"
 	"github.com/psyb0t/slogging/handlers/logring"
 	"github.com/psyb0t/slogging/slogconf"
 	"github.com/stretchr/testify/assert"
@@ -27,7 +28,7 @@ func TestRingKeepsItsLevelGateInsideTheConfiguredFanOut(t *testing.T) {
 	ring := logring.New(logring.Options{Level: slog.LevelWarn})
 	require.True(
 		t,
-		slogconf.AddHandler(ring),
+		slogconf.AddSink(ring),
 		"the default logger should be this package's fan-out",
 	)
 
@@ -51,14 +52,14 @@ func TestAddingTheRingLeavesTheExistingHandlersIntact(t *testing.T) {
 
 	before := slog.Default().Handler()
 
-	fanOut, ok := before.(*slogconf.FanOutHandler)
+	fanOut, ok := before.(*handlers.FanOutHandler)
 	require.True(t, ok, "expected the configured fan-out")
 
 	countBefore := fanOut.Len()
 
-	require.True(t, slogconf.AddHandler(logring.New(logring.Options{})))
+	require.True(t, slogconf.AddSink(logring.New(logring.Options{})))
 
-	after, ok := slog.Default().Handler().(*slogconf.FanOutHandler)
+	after, ok := slog.Default().Handler().(*handlers.FanOutHandler)
 	require.True(t, ok)
 	assert.Equal(t, countBefore+1, after.Len())
 }

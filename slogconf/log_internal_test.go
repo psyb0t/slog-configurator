@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/psyb0t/slogging/handlers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -69,25 +70,25 @@ func TestConfigLog(t *testing.T) {
 	testCases := []struct {
 		name      string
 		level     level
-		format    format
+		format    handlers.Format
 		addSource bool
 	}{
 		{
 			name:      "Debug config with JSON format and source reporting",
 			level:     levelDebug,
-			format:    formatJSON,
+			format:    handlers.FormatJSON,
 			addSource: true,
 		},
 		{
 			name:      "Info config with text format and no source reporting",
 			level:     levelInfo,
-			format:    formatText,
+			format:    handlers.FormatText,
 			addSource: false,
 		},
 		{
 			name:      "Error config with JSON format and source reporting",
 			level:     levelError,
-			format:    formatJSON,
+			format:    handlers.FormatJSON,
 			addSource: true,
 		},
 	}
@@ -130,7 +131,7 @@ func TestConfigureErrorHandling(t *testing.T) {
 			logFormat:    "invalid_format",
 			logAddSource: "false",
 			expectError:  true,
-			errorMessage: "failed to create log handler",
+			errorMessage: "invalid log format",
 		},
 		{
 			name:         "Multiple invalid values",
@@ -170,7 +171,7 @@ func TestConfigureSetsFanOutHandler(t *testing.T) {
 	require.NoError(t, err)
 
 	current := slog.Default().Handler()
-	_, ok := current.(*FanOutHandler)
+	_, ok := current.(*handlers.FanOutHandler)
 	assert.True(t, ok, "configure should set a FanOutHandler as default")
 }
 

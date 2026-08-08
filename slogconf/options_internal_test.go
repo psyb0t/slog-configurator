@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"testing"
 
+	"github.com/psyb0t/slogging/handlers"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,7 @@ func TestInitReadsTheEnvVarNamesTheCallerAsks(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, levelError, c.Level)
-	assert.Equal(t, formatJSON, c.Format)
+	assert.Equal(t, handlers.FormatJSON, c.Format)
 	assert.True(t, c.AddSource)
 
 	require.NoError(t, Init(opts))
@@ -84,7 +85,7 @@ func TestOptionDefaultsApplyWhenTheVariableIsUnset(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.Equal(t, levelError, c.Level)
-	assert.Equal(t, formatJSON, c.Format)
+	assert.Equal(t, handlers.FormatJSON, c.Format)
 	assert.True(t, c.AddSource)
 }
 
@@ -159,6 +160,6 @@ func TestInitLeavesAFanOutInstalled(t *testing.T) {
 
 	require.NoError(t, Init(Options{}))
 
-	_, ok := slog.Default().Handler().(*FanOutHandler)
+	_, ok := slog.Default().Handler().(*handlers.FanOutHandler)
 	assert.True(t, ok)
 }

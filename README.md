@@ -5,6 +5,7 @@
 [![coverage](https://raw.githubusercontent.com/psyb0t/slogging/badges/coverage.svg)](https://github.com/psyb0t/slogging/actions/workflows/pipeline.yml)
 [![version](https://raw.githubusercontent.com/psyb0t/slogging/badges/version.svg)](https://github.com/psyb0t/slogging/tags)
 [![license](https://raw.githubusercontent.com/psyb0t/slogging/badges/license.svg)](LICENSE)
+[![imported by](https://raw.githubusercontent.com/psyb0t/slogging/badges/importers.svg)](https://github.com/psyb0t/slogging/blob/badges/importers.md)
 
 Everything for Go's stdlib `log/slog` in one place: configure it from the environment, and stack handlers onto it that ship logs to Loki or keep them searchable in memory.
 
@@ -15,6 +16,7 @@ Spiritual successor to [`logrus-configurator`](https://github.com/psyb0t/logrus-
 - [Layout](#layout)
 - [Quick Start](#quick-start)
 - [slogconf](#slogconf)
+- [handlers](#handlers)
 - [handlers/logring](#handlerslogring)
 - [handlers/loki](#handlersloki)
 - [Migrating From slog-configurator](#migrating-from-slog-configurator)
@@ -25,9 +27,15 @@ Spiritual successor to [`logrus-configurator`](https://github.com/psyb0t/logrus-
 
 ```
 slogconf/              configure slog from the environment
+handlers/              Handler (the process's output) + FanOutHandler (tees to many)
 handlers/logring/      bounded in-memory ring you can search
 handlers/loki/         push records to Loki's HTTP API
 ```
+
+Two kinds of thing live here, and the split is the whole design. `handlers` holds
+the **structural** pieces — the one that writes your output, and the one that tees
+a record to many. Its subpackages are **destinations**: a searchable ring, a Loki
+server. You configure one output and add as many destinations as you like.
 
 Runtime dependencies are `ctxerrors` and nothing else — no config loader, no HTTP framework. Every handler here talks to `log/slog` and the standard library.
 
@@ -86,16 +94,56 @@ Only the variables you name get read, so a stray `LOG_LEVEL` can't sneak in behi
 
 **Call it early.** `slog.Logger.With` snapshots the handler chain when called, so a logger derived before `Init` keeps pointing at the old one.
 
-**Stacking handlers.** The default is a `FanOutHandler` dispatching to everything registered:
+**Adding a destination vs changing where you print.** These are different jobs and have different calls:
 
 ```go
-slogconf.AddHandler(myHandler)             // stack alongside, like a logrus hook
-slogconf.SetHandlers(handlerA, handlerB)   // replace everything
+slogconf.AddSink(ring)        // ALSO send records here — appends
+slogconf.SetOutput(handler)   // send my output THERE instead — replaces, keeps sinks
+slogconf.SetHandlers(h)       // start over: replaces the output AND every sink
 ```
 
-A handler that fails doesn't take the others down with it — every handler gets the record regardless, and failures come back joined. slog discards whatever `Handle` returns, so a fan-out that bailed on the first error would let an unreachable Loki silently kill stdout logging with nothing to say why.
+The distinction is load-bearing, not cosmetic. `Init` installs an output handler that already writes to stdout and stderr. Adding a *second* handler that also writes to the terminal doesn't replace the first — both receive every record and print it twice. `SetOutput` is the call that swaps it, and it leaves anything you added with `AddSink` in place.
 
-`AddHandler` returns `false` when something else had already replaced slog's default: still added, but the stdout/stderr split is gone, which is worth noticing rather than discovering through missing logs.
+`SetHandlers` is the escape hatch, mostly for tests pointing everything at a buffer: it discards your sinks too.
+
+Both `AddSink` and `SetOutput` return `false` when something else had already replaced slog's default — still applied, but the stdout/stderr split is gone, which is worth noticing rather than discovering through missing logs.
+
+A handler that fails doesn't take the others down with it: every handler gets the record regardless, and failures come back joined. slog discards whatever `Handle` returns, so a fan-out that bailed on the first error would let an unreachable Loki silently kill stdout logging with nothing to say why.
+
+## handlers
+
+`Handler` is the process's output. Every record goes to one of two writer sets, chosen by level:
+
+```go
+import "github.com/psyb0t/slogging/handlers"
+
+h, err := handlers.NewStd(handlers.Options{Format: handlers.FormatJSON})
+slogconf.SetOutput(h)
+```
+
+Point both sets somewhere else, or at several writers each:
+
+```go
+h, err := handlers.New(
+    handlers.Options{Format: handlers.FormatJSON},
+    handlers.Stdout(os.Stdout, logFile),
+    handlers.Stderr(os.Stderr),
+)
+```
+
+Several writers on one side get the same bytes. Different *renderings* per destination is a different job — build a `Handler` each and tee them with `handlers.NewFanOut(...)`.
+
+**Point both sides at the same writer and everything lands together**, which is what stdlib slog does — it puts every level on stderr. Splitting is the default here so a log collector can separate error noise from happy-path noise without parsing. `Options.SplitAt` moves the boundary (default `slog.LevelWarn`).
+
+**`Options.Level` is the one setting that stays live.** It's a `slog.Leveler`, resolved on every record rather than read once, so a `*slog.LevelVar` you bump later actually takes effect:
+
+```go
+level := new(slog.LevelVar)
+h, _ := handlers.NewStd(handlers.Options{Level: level})
+slogconf.SetOutput(h)
+
+level.Set(slog.LevelDebug)   // takes effect immediately
+```
 
 ## handlers/logring
 
@@ -108,7 +156,7 @@ import (
 )
 
 ring := logring.New(logring.Options{})
-slogconf.AddHandler(ring) // the ring IS the slog.Handler
+slogconf.AddSink(ring) // the ring IS the slog.Handler
 
 page := ring.Search(logring.SearchOptions{
 	Attrs:    map[string]string{"request_id": "abc123"},
@@ -160,7 +208,7 @@ if err != nil {
 	panic(err)
 }
 
-slogconf.AddHandler(handler)
+slogconf.AddSink(handler)
 ```
 
 `NewClientWithConfig` / `NewHandlerWithConfig` take the same settings directly when you'd rather not use the environment.
@@ -179,6 +227,18 @@ This module was `github.com/psyb0t/slog-configurator` through v1.5.0. Those vers
 | `slogconfigurator.Init(...)` | `slogconf.Init(...)` |
 | `github.com/psyb0t/slog-configurator/logring` | `github.com/psyb0t/slogging/handlers/logring` |
 | `github.com/psyb0t/common-go/slogging/loki` | `github.com/psyb0t/slogging/handlers/loki` |
+
+Since v1.7.0 the handler API changed as well:
+
+| before | after |
+|---|---|
+| `slogconf.AddHandler(sink)` | `slogconf.AddSink(sink)` |
+| — | `slogconf.SetOutput(h)` — swap where you print, keeping sinks |
+| `slogconf.NewMultiWriterHandler(fmt, opts, out, err)` | `handlers.New(handlers.Options{…}, handlers.Stdout(out), handlers.Stderr(err))` |
+| `slogconf.MultiWriterHandler` | `handlers.Handler` |
+| `slogconf.FanOutHandler` / `NewFanOutHandler` | `handlers.FanOutHandler` / `handlers.NewFanOut` |
+
+`MultiWriterHandler` never was one — it took exactly two writers and routed by level. `handlers.Handler` is that thing named for what it does, and `handlers.Stdout` / `handlers.Stderr` are variadic, so "several writers per stream" is finally what the API actually offers.
 
 Every exported name is unchanged — only import paths and the package name move.
 

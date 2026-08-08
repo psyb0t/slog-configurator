@@ -2,6 +2,68 @@
 
 All notable changes per release. Versions follow [semver](https://semver.org).
 
+## v1.7.0 — 2026-08-08
+
+**Breaking.** The handler API is rebuilt around what the pieces actually do.
+Every consumer needs an edit; the mapping is mechanical and in the README's
+migration table.
+
+### The name was lying
+
+`MultiWriterHandler` was not a multi-writer. It took exactly two writers and
+routed between them by level — the opposite of what `io.MultiWriter` means. The
+thing that genuinely tees to many was `FanOutHandler` all along.
+
+- `handlers.Handler` replaces it, named for what it is: the process's output,
+  sending every record to one of two writer sets chosen by level. Point both at
+  the same writer and everything lands together — which is what stdlib slog
+  does, since it puts every level on stderr. "Split" is a configuration, not a
+  separate kind of handler.
+- **Several writers per stream now works**, via `handlers.Stdout(a, b)` /
+  `handlers.Stderr(c)`. Go allows only a function's FINAL parameter to be
+  variadic, so one constructor taking two variadic writer lists is not
+  expressible — hence options rather than `New(stdout..., stderr...)`.
+- The split point is a parameter (`Options.SplitAt`, default `LevelWarn`)
+  instead of a hardcoded branch inside `Handle`.
+- Both structural handlers moved to `handlers/`, alongside — not inside — the
+  destination packages. `handlers` holds what composes a chain; `handlers/logring`
+  and `handlers/loki` hold where records end up. `FanOutHandler` still carries
+  the `slog.Handler` interface, which is what lets those unrelated sinks share
+  one chain.
+
+### Adding a sink and changing where you print are now different calls
+
+`AddHandler` did one thing and `SetHandlers` did the other, and neither did what
+you wanted when the thing you were adding also wrote to the terminal.
+
+- `AddSink` appends a destination. `SetOutput` replaces the output handler and
+  **keeps your sinks**. `SetHandlers` still exists as the escape hatch that
+  discards everything, which is what tests want.
+- This was a real trap, not a naming preference: `Init` already installs an
+  output that writes to stdout and stderr, so adding a second console handler
+  printed every line **twice**, and the only call that replaced it also deleted
+  your ring and your shipper. The output now occupies a reserved slot so
+  replacing it is expressible. Both failures were silent, so both are asserted
+  in `slogconf/compat_test.go` rather than merely documented.
+
+### Fixed: a runtime log level that never took effect
+
+`MultiWriterHandler` stored the resolved `slog.Level` and read `opts.Level.Level()`
+once at construction. Hand it a `*slog.LevelVar` — the stdlib's documented way
+to change level at runtime — and bumping it later did nothing at that layer,
+while the inner handlers still honoured it. Half-working, silent, and invisible
+to build, test and lint alike.
+
+`handlers.Handler` stores a `slog.Leveler` and resolves it on every check, so a
+`LevelVar` behaves the way its documentation says. Reintroducing the old
+snapshot fails the test that covers it.
+
+### Also
+
+- Config validation moved into `readConfig`, so level and format are checked in
+  a defined order — level first — instead of one in each function.
+- The imported-by badge is enabled, refreshed weekly.
+
 ## v1.6.1 — 2026-08-08
 
 The startup debug line reports the module's real name.
